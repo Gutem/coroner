@@ -1,0 +1,18 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "autopsy": {
+      "type": "local",
+      "command": ["bun", "run", "/caminho/absoluto/coroner/src/index.js"],
+      "environment": {
+        "AUTOPSY_CASES_DIR": "~/AutopsyCases"
+      },
+      "enabled": true
+    },
+    "autopsy-remote": {
+      "type": "remote",
+      "url": "http://127.0.0.1:3123/mcp",
+      "enabled": false
+    }
+  }
+}

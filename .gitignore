@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+logs/
+
+# Test coverage
+coverage/
+
+# Benchmark results (keep directories, ignore reports)
+tests/benchmark/benchmark-reports/*.json
+tests/benchmark/gatling-results/*.json
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Graphify
+# manifest.json guarda caminhos ABSOLUTOS da maquina (nao versionar)
+graphify-out/manifest.json
+graphify-out/cache/
+.graphify_root
+.rebuild.lock
+.graphify_*.json
+
+# Python (prepare.py do harness de verificacao)
+__pycache__/
+*.pyc

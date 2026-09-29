@@ -1,0 +1,88 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
+  "formatter": {
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100,
+    "lineEnding": "lf"
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "trailingCommas": "es5",
+      "semicolons": "asNeeded",
+      "arrowParentheses": "asNeeded",
+      "bracketSpacing": true
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "style": {
+        "useConst": "error",
+        "useNodejsImportProtocol": "warn",
+        "useTemplate": "warn"
+      },
+      "correctness": {
+        "noUnusedVariables": "error",
+        "noUnusedImports": "error"
+      },
+      "suspicious": {
+        "noDoubleEquals": "error",
+        "noVar": "error",
+        "noConsole": "warn"
+      }
+    }
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "overrides": [
+    {
+      "includes": ["**/*.astro"],
+      "formatter": {
+        "enabled": false
+      },
+      "linter": {
+        "enabled": false
+      },
+      "assist": {
+        "enabled": false
+      }
+    },
+    {
+      "includes": ["**/*.html", "**/*.htm"],
+      "formatter": {
+        "enabled": false
+      },
+      "linter": {
+        "enabled": false
+      },
+      "assist": {
+        "enabled": false
+      }
+    }
+  ],
+  "files": {
+    "includes": [
+      "**",
+      "!dist",
+      "!node_modules",
+      "!data",
+      "!.astro",
+      "!public",
+      "!graphify-out",
+      "!target"
+    ]
+  }
+}

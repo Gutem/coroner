@@ -1,0 +1,269 @@
+--- a/Core/src/org/sleuthkit/autopsy/mcp/McpProtocolHandler.java
++++ b/Core/src/org/sleuthkit/autopsy/mcp/McpProtocolHandler.java
+@@ -78,7 +78,9 @@
+             id = request.has("id") ? request.get("id") : NullNode.getInstance();
+ 
+             Object result = switch (method) {
+-                case "tools/list"   -> TOOLS_LIST_SERVICE.listTools();
++                // MCP spec: ListToolsResult is an object { tools: Tool[] }. Returning the bare list
++                // produced "result": [...] and broke every spec-validating client (see McpProtocolHandlerTest).
++                case "tools/list"   -> Map.of("tools", TOOLS_LIST_SERVICE.listTools());
+                 case "tools/call"   -> dispatchToolCall(params);
+                 case "initialize"   -> handleInitialize();
+                 default             -> throw new McpException("Unknown method: " + method, McpException.ERR_METHOD_NOT_FOUND);
+
+--- a/Core/src/org/sleuthkit/autopsy/mcp/TskQueryService.java
++++ b/Core/src/org/sleuthkit/autopsy/mcp/TskQueryService.java
+@@ -1454,37 +1454,91 @@
+         "Note: caseId in the response reflects the currently open case — " +
+         "if this changes between calls, alert the user.";
+ 
++    /**
++     * Builds a tool definition for a case-scoped tool: appends the shared case-id note to
++     * the description and delegates the schema to the tool builder.
++     *
++     * @param name        tool name as advertised to the client
++     * @param description description shown to the model, before the case-id note
++     * @param properties  JSON-schema map for the tool's named arguments
++     * @return the tool definition
++     */
+     private Map<String, Object> toolWithNote(String name, String description, Map<String, Object> properties) {
+         return tool(name, description + " " + CASE_ID_NOTE, properties);
+     }
+ 
++    /**
++     * Builds a tool definition for a case-scoped tool, with the same rules as the
++     * three-argument overload and additionally listing the given names under "required".
++     *
++     * @param name        tool name as advertised to the client
++     * @param description description shown to the model, before the case-id note
++     * @param properties  JSON-schema map for the tool's named arguments
++     * @param required    names of the arguments the caller must supply
++     * @return the tool definition
++     */
+     private Map<String, Object> toolWithNote(String name, String description, Map<String, Object> properties, List<String> required) {
+         return tool(name, description + " " + CASE_ID_NOTE, properties, required);
+     }
+ 
++    /**
++     * Builds one entry for the tools/list response, wrapping the properties in an object
++     * schema that declares "additionalProperties": false, as the MCP spec recommends.
++     * Clients that validate the advertised schema can reject arguments not listed in
++     * "properties"; dispatch does not perform this validation, so a service may still
++     * ignore unknown keys (issue #8033).
++     *
++     * @param name        tool name as advertised to the client
++     * @param description description shown to the model
++     * @param properties  JSON-schema map for the tool's named arguments
++     * @return the tool definition
++     */
+     private Map<String, Object> tool(String name, String description, Map<String, Object> properties) {
++        // The flag is advertised for validating clients; dispatch does not enforce it.
+         return Map.of(
+             "name", name,
+             "description", description,
+             "inputSchema", Map.of(
+                 "type", "object",
+-                "properties", properties
++                "properties", properties,
++                "additionalProperties", false
+             )
+         );
+     }
+ 
++    /**
++     * Builds one entry for the tools/list response with the same object schema rules as
++     * the three-argument overload -- "type": "object", "additionalProperties": false --
++     * and additionally lists the given names under "required".
++     *
++     * @param name        tool name as advertised to the client
++     * @param description description shown to the model
++     * @param properties  JSON-schema map for the tool's named arguments
++     * @param required    names of the arguments the caller must supply
++     * @return the tool definition
++     */
+     private Map<String, Object> tool(String name, String description, Map<String, Object> properties, List<String> required) {
++        // Same as above: advertised for validating clients, not enforced by dispatch.
+         return Map.of(
+             "name", name,
+             "description", description,
+             "inputSchema", Map.of(
+                 "type", "object",
+                 "properties", properties,
+-                "required", required
++                "required", required,
++                "additionalProperties", false
+             )
+         );
+     }
+ 
++    /**
++     * Builds one JSON-schema property entry ("type" plus "description") for a single tool
++     * argument.
++     *
++     * @param type        JSON-schema type of the argument, e.g. "string" or "integer"
++     * @param description description shown to the model
++     * @return the property schema entry
++     */
+     private Map<String, Object> param(String type, String description) {
+         return Map.of("type", type, "description", description);
+     }
+
+--- a/Tools/autopsy-mcp-stdio/autopsy-mcp-stdio.js
++++ b/Tools/autopsy-mcp-stdio/autopsy-mcp-stdio.js
+@@ -90,10 +90,11 @@
+     } catch { /* never let logging crash the process */ }
+ }
+ 
+-// ---------------------------------------------------------------------------
+-// --test mode: verify the server is reachable, token exists, and tools load
+-// ---------------------------------------------------------------------------
+-
++/**
++ * --test mode: verifies that the token file exists, the HTTP server is reachable, the
++ * tools list parses as a ListToolsResult, and the spot-checked tools are advertised.
++ * Exits 0 when every check passes, 1 otherwise (see printTestResults).
++ */
+ async function runTest() {
+     const checks = [];
+     let token;
+@@ -149,8 +150,9 @@
+     }
+     checks.push(`  [OK] Valid MCP JSON-RPC response received`);
+ 
+-    // 4. Tools list — expect at least 15 tools and spot-check 5 known ones
+-    const tools = data.result;
++    // 4. Tools list — expect at least 15 tools and spot-check 5 known ones.
++    // data.result is a ListToolsResult: the tool array lives under .tools.
++    const tools = data.result?.tools;
+     if (!Array.isArray(tools) || tools.length < 15) {
+         checks.push(`  [FAIL] tools/list returned ${Array.isArray(tools) ? tools.length : 0} tools (expected ≥ 15)`);
+         printTestResults(checks, false);
+@@ -296,14 +298,19 @@
+     inputSchema: { type: "object", properties: {} }
+ };
+ 
+-// Proxy tools/list straight through — tool definitions live only in Java.
+-// If Autopsy is not running, return a single status tool so Claude Desktop
+-// can report a useful message rather than failing to load the server entirely.
++/**
++ * Answers tools/list by proxying to the Autopsy HTTP server — tool definitions live only
++ * in Java. Java already returns the whole ListToolsResult, so the result is passed through
++ * unchanged. If Autopsy is not running, a single status tool is returned so Claude Desktop
++ * can report a useful message rather than failing to load the server entirely.
++ */
+ server.setRequestHandler(ListToolsRequestSchema, async () => {
+     try {
+-        const tools = await callJava("tools/list", {});
+-        log("INFO", `tools/list returned ${tools.length} tools`);
+-        return { tools };
++        // Java returns the whole ListToolsResult; pass it through unchanged. Re-wrapping
++        // it here produced {"tools":{"tools":[...]}}, which is not a ListToolsResult.
++        const result = await callJava("tools/list", {});
++        log("INFO", `tools/list returned ${result.tools.length} tools`);
++        return result;
+     } catch (err) {
+         log("ERROR", `tools/list failed — Autopsy not reachable: ${err.message}`);
+         return { tools: [UNAVAILABLE_TOOL] };
+
+--- /dev/null
++++ b/Core/test/unit/src/org/sleuthkit/autopsy/mcp/McpProtocolHandlerTest.java
+@@ -0,0 +1,98 @@
++/*
++ * Autopsy Forensic Browser
++ *
++ * Copyright 2024 Basis Technology Corp.
++ * Contact: carrier <at> sleuthkit <dot> org
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ *     http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++package org.sleuthkit.autopsy.mcp;
++
++import com.fasterxml.jackson.databind.JsonNode;
++import com.fasterxml.jackson.databind.ObjectMapper;
++import java.util.ArrayList;
++import java.util.List;
++import org.junit.Assert;
++import org.junit.Test;
++
++/**
++ * Conformance tests for the JSON-RPC responses produced by McpProtocolHandler.
++ *
++ * tools/list must return a ListToolsResult — an object with a "tools" array — in every published
++ * schema revision (2024-11-05, 2025-06-18, 2025-11-25). Returning the bare list makes "result" an
++ * array, which spec-validating clients (including the official MCP SDK) reject with a schema error,
++ * leaving the server unusable even though the Node wrapper — which forwards raw JSON without
++ * validating — appears to work.
++ */
++public class McpProtocolHandlerTest {
++
++    private final ObjectMapper mapper = new ObjectMapper();
++
++    /**
++     * Sends a minimal JSON-RPC request for one method through the real handler and
++     * returns its "result" node, failing the test if the response carries an error.
++     *
++     * @param method JSON-RPC method name, e.g. "tools/list"
++     * @return the parsed result node
++     * @throws Exception if the handler throws or the response is not valid JSON
++     */
++    private JsonNode call(String method) throws Exception {
++        McpProtocolHandler handler = new McpProtocolHandler();
++        String response = handler.handle("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"" + method + "\"}");
++        JsonNode parsed = mapper.readTree(response);
++        Assert.assertNull("expected a result, got an error: " + response, parsed.get("error"));
++        return parsed.get("result");
++    }
++
++    @Test
++    /**
++     * tools/list must answer with a ListToolsResult object holding a non-empty "tools"
++     * array; a bare array is rejected by spec-validating clients.
++     *
++     * @throws Exception if the request cannot be handled
++     */
++    public void toolsListResultIsAnObjectWithAToolsArray() throws Exception {
++        JsonNode result = call("tools/list");
++        Assert.assertTrue("ListToolsResult must be a JSON object, was: " + result.getNodeType(),
++                result.isObject());
++        JsonNode tools = result.get("tools");
++        Assert.assertNotNull("ListToolsResult.tools is required", tools);
++        Assert.assertTrue("ListToolsResult.tools must be an array", tools.isArray());
++        Assert.assertTrue("case-independent tools must be advertised", tools.size() > 0);
++    }
++
++    @Test
++    /**
++     * Every advertised tool must set "additionalProperties": false so that an unknown
++     * parameter cannot be silently dropped (issue #8033).
++     *
++     * @throws Exception if the request cannot be handled
++     */
++    public void everyToolSchemaSetsAdditionalPropertiesFalse() throws Exception {
++        JsonNode tools = call("tools/list").get("tools");
++        List<String> offenders = new ArrayList<>();
++        for (JsonNode tool : tools) {
++            String name = tool.get("name").asText();
++            JsonNode schema = tool.get("inputSchema");
++            Assert.assertNotNull(name + ": inputSchema is required", schema);
++            Assert.assertEquals(name + ": inputSchema.type", "object", schema.path("type").asText());
++            Assert.assertNotNull(name + ": inputSchema.properties is required", schema.get("properties"));
++            JsonNode additional = schema.get("additionalProperties");
++            if (additional == null || additional.asBoolean(true)) {
++                offenders.add(name);
++            }
++        }
++        Assert.assertTrue("these tools would silently ignore unknown parameters (see issue #8033): "
++                + offenders, offenders.isEmpty());
++    }
++}

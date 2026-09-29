@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "autopsy": {
+      "command": "bun",
+      "args": ["run", "C:\\code\\coroner\\src\\index.js"],
+      "env": {
+        "AUTOPSY_CASES_DIR": "C:\\Users\\SEU_USUARIO\\AutopsyCases"
+      }
+    }
+  }
+}

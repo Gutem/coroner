@@ -1,0 +1,59 @@
+pre-commit:
+  parallel: true
+  commands:
+    graphify:
+      run: graphify update .
+      stage_fixed: true
+      skip_fixtures: true
+    lint:
+      run: bunx @biomejs/biome check . --no-errors-on-unmatched
+      skip:
+        - merge
+        - rebase
+    test:
+      run: bun test 2>&1 | tee /dev/stderr | grep -qE "0 test files|0 fail"
+      fail_text: FAIL
+      skip:
+        - merge
+        - rebase
+    secrets:
+      run: gitleaks detect --no-git --verbose 2>/dev/null || true
+      skip:
+        - merge
+        - rebase
+    typecheck:
+      run: tsc --noEmit --checkJS 2>/dev/null || true
+      skip:
+        - merge
+        - rebase
+    banned:
+      run: |
+        violations=0
+        if rg -q '\beval\(.*\+' -g '!*.test.*' -g '!*.spec.*' -g '!node_modules' -g '!lefthook.yml' . 2>/dev/null; then
+          echo "⚠️  eval() with concatenation found — RCE risk"; violations=1
+        fi
+        if rg -q '\bnew Function\b' -g '!*.test.*' -g '!*.spec.*' -g '!node_modules' -g '!lefthook.yml' . 2>/dev/null; then
+          echo "⚠️  new Function() found — RCE risk"; violations=1
+        fi
+        if rg -q 'if \(0 &&\b' -g '!node_modules' -g '!lefthook.yml' . 2>/dev/null; then
+          echo "⚠️  if (0 && ...) found — dead code guard"; violations=1
+        fi
+        if rg -q 'lsof.*xargs kill' -g '!node_modules' -g '!lefthook.yml' . 2>/dev/null; then
+          echo "⚠️  lsof | xargs kill found — kills other processes"; violations=1
+        fi
+        if rg -q 'export \* from' -g '!*.test.*' -g '!node_modules' -g '!lefthook.yml' . 2>/dev/null; then
+          echo "⚠️  export * found — kills tree-shaking"; violations=1
+        fi
+        [ $violations -eq 0 ]
+
+commit-msg:
+  commands:
+    conventional:
+      run: |
+        PATTERN='^(feat|fix|refactor|docs|test|chore|perf|ci|build|revert)(\(.+\))?!?\s*:.+'
+        head -1 {1} | grep -qE "$PATTERN" || {
+          echo "❌ Conventional commit required: <type>[scope]: <description>"
+          echo "  feat|fix|refactor|docs|test|chore|perf|ci|build|revert"
+          exit 1
+        }
+

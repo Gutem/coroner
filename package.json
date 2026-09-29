@@ -1,0 +1,31 @@
+{
+  "name": "coroner",
+  "version": "0.1.0",
+  "description": "Read-only MCP server for Autopsy forensic cases (Bun + bun:sqlite). stdio + HTTP transport.",
+  "author": "Gutem",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.js",
+    "dev": "bun --watch run src/index.js",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage",
+    "test:watch": "bun test --watch",
+    "lint": "bunx @biomejs/biome check .",
+    "format": "bunx @biomejs/biome check --write .",
+    "typecheck": "tsc -p jsconfig.json --noEmit --checkJS"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "typescript": "^5.3.0"
+  },
+  "license": "GPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Gutem/coroner.git"
+  },
+  "homepage": "https://github.com/Gutem/coroner"
+}
