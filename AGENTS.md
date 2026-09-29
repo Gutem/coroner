@@ -31,6 +31,13 @@ MCP server read-only para casos forenses do Autopsy. Lê `autopsy.db` (SQLite vi
   patch, `ISSUE.md`, sonda `probe-conformance.mjs` e as verificações `verify/run.sh` (JUnit) e
   `verify/run-wrapper.sh` (wrapper de stdio + cliente do SDK). Ao mexer no patch, rode as duas.
 
+## Histórico e commits
+
+- Cada mudança entra como **commit próprio** — sem `--amend` nem `--force` depois que o repo foi
+  publicado.
+- O repo público (`coroner`) nasceu com **um** commit inicial: aquele é o estado inicial por
+  construção. Daí em diante, histórico incremental normal.
+
 ## Common Tasks
 
 ### Adicionar tool
